@@ -2,14 +2,15 @@ import streamlit as st
 import os
 import joblib
 import json
+import pandas as pd
 from sklearn.preprocessing import StandardScaler
 from sklearn.model_selection import train_test_split
 from utils.data_utils import load_dataset, preprocess_data
 from utils.model_utils import train_model, evaluate_model
 from utils.predict_utils import predict
 
-
 st.set_page_config(page_title="CVD Risk Predictor", layout="wide", page_icon="💉")
+
 st.markdown(
     """
     <style>
@@ -34,35 +35,46 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-st.title("🧠 Cardiovascular Disease Risk Predictor")
+st.title("Cardiovascular Disease Risk Predictor")
 
-tab_train, tab_predict = st.tabs([" Train Model", "📈 Predict Risk"])
-
+tab_train, tab_predict = st.tabs(["Train Model", "Predict Risk"])
 
 with tab_train:
-    st.subheader("Upload Dataset")
-    input_file = st.file_uploader("Upload CSV or Excel file", type=["csv", "xls", "xlsx"])
-    
-    if input_file:
-        df = load_dataset(input_file)
-        st.dataframe(df.head())
+    dataset_source = st.radio("Select dataset source", ["Upload dataset", "Use sample dataset"])
+    df = None
+    if dataset_source == "Upload dataset":
+        input_file = st.file_uploader("Upload CSV or Excel file", type=["csv", "xls", "xlsx"])
+        if input_file:
+            df = load_dataset(input_file)
+    else:
+        sample_path = "sample_data/cvd_sample.csv"
+        if os.path.exists(sample_path):
+            df = pd.read_csv(sample_path)
+            st.success("Sample dataset loaded.")
+        else:
+            st.error("Sample dataset not found. Please upload a file instead.")
 
+    if df is not None:
+        st.dataframe(df.head())
         st.divider()
         col1, col2 = st.columns(2)
         with col1:
-            target_column = st.selectbox("🎯 Target column", options=df.columns)
+            target_column = st.selectbox("Target column", options=df.columns)
         with col2:
-            exclude_columns = st.multiselect("🚫 Exclude columns", options=[c for c in df.columns if c != target_column])
+            exclude_columns = st.multiselect(
+                "Exclude columns",
+                options=[c for c in df.columns if c != target_column]
+            )
 
         st.divider()
         col1, col2 = st.columns(2)
         with col1:
             model_choice = st.selectbox(
-                "🤖 Select model",
+                "Model",
                 ["Random Forest", "Logistic Regression", "Gradient Boosting", "XGBoost", "LightGBM", "TabNet"]
             )
         with col2:
-            model_name = st.text_input("💾 Model name", value="cvd_model")
+            model_name = st.text_input("Model name", value="cvd_model")
 
         if st.button("Train Model"):
             features = [c for c in df.columns if c not in exclude_columns + [target_column]]
@@ -76,13 +88,12 @@ with tab_train:
             model = train_model(X_train_scaled, y_train, model_choice)
             metrics = evaluate_model(model, X_test_scaled, y_test)
 
-            st.subheader("Model Evaluation Metrics")
-            st.progress(int(metrics["accuracy"] * 100))
+            st.subheader("Model Evaluation")
             cols = st.columns(5)
             cols[0].metric("Accuracy", f"{metrics['accuracy']:.2f}")
             cols[1].metric("Precision", f"{metrics['precision']:.2f}")
             cols[2].metric("Recall", f"{metrics['recall']:.2f}")
-            cols[3].metric("F1 Score", f"{metrics['f1']:.2f}")
+            cols[3].metric("F1", f"{metrics['f1']:.2f}")
             cols[4].metric("ROC-AUC", f"{metrics['roc_auc']:.2f}")
 
             os.makedirs("models", exist_ok=True)
@@ -91,18 +102,16 @@ with tab_train:
             with open(f"models/{model_name}_metadata.json", "w") as f:
                 json.dump({"features": final_features, "target": target_column}, f)
 
-            st.success("✅ Model, scaler, and metadata saved successfully.")
-
-
+            st.success("Model, scaler, and metadata saved.")
 
 with tab_predict:
     os.makedirs("models", exist_ok=True)
     model_files = [f for f in os.listdir("models") if f.endswith(".joblib") and not f.endswith("_scaler.joblib")]
 
     if not model_files:
-        st.warning("No trained models found. Please train a model first.")
+        st.warning("No trained models found.")
     else:
-        model_file = st.selectbox("Select Model", model_files)
+        model_file = st.selectbox("Select model", model_files)
         if model_file:
             scaler_file = model_file.replace(".joblib", "_scaler.joblib")
             metadata_file = model_file.replace(".joblib", "_metadata.json")
@@ -114,9 +123,8 @@ with tab_predict:
             features = metadata["features"]
             target_column = metadata["target"]
 
-            st.info(f"Model loaded successfully ({model_file})")
+            st.info(f"Model loaded: {model_file}")
 
-            st.subheader("Input Patient Data")
             user_input = {}
             cols = st.columns(2)
             for i, feature in enumerate(features):
@@ -129,6 +137,6 @@ with tab_predict:
             if st.button("Predict"):
                 pred, proba = predict(model, scaler, user_input)
                 if pred == 0:
-                    st.success(f"🩵 {target_column} = 0 → No CVD Event (Probability: {proba:.2f})")
+                    st.success(f"{target_column} = 0 → No event (Probability: {proba:.2f})")
                 else:
-                    st.error(f"💔 {target_column} = 1 → Event Likely (Probability: {proba:.2f})")
+                    st.error(f"{target_column} = 1 → Event likely (Probability: {proba:.2f})")
