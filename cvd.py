@@ -11,24 +11,30 @@ from utils.predict_utils import predict
 st.set_page_config(page_title="Cardiovascular Disease - Predictor", layout="wide")
 st.title("🫀 Cardiovascular Disease Predictor - Train & Predict")
 
+
 tab_train, tab_predict = st.tabs(["Train Model", "Predict CVD"])
 
+
 with tab_train:
-    input_file = st.file_uploader("Upload CSV/XLS/XLSX dataset:", type=["csv","xls","xlsx"])
+    input_file = st.file_uploader("Upload CSV/XLS/XLSX dataset:", type=["csv", "xls", "xlsx"])
     
     if input_file:
         df = load_dataset(input_file)
-        st.subheader("Dataset Preview")
+        st.subheader("📄 Dataset Preview")
         st.dataframe(df.head())
 
-        target_column = st.selectbox("Select target column:", options=df.columns)
+        target_column = st.selectbox("🎯 Select target column:", options=df.columns)
         exclude_columns = st.multiselect(
-            "Select columns to exclude from features:",
+            "🚫 Select columns to exclude from features:",
             options=[c for c in df.columns if c != target_column]
         )
 
-        model_choice = st.selectbox("Select model:", ["Random Forest", "Logistic Regression", "Gradient Boosting", "XGBoost", "LightGBM", "TabNet"])
-        model_name = st.text_input("Model name:", value="cvd_model")
+        model_choice = st.selectbox(
+            "🤖 Select model:",
+            ["Random Forest", "Logistic Regression", "Gradient Boosting", "XGBoost", "LightGBM", "TabNet"]
+        )
+
+        model_name = st.text_input("💾 Model name:", value="cvd_model")
 
         if st.button("Train Model") and model_name:
             features = [c for c in df.columns if c not in exclude_columns + [target_column]]
@@ -42,7 +48,8 @@ with tab_train:
             model = train_model(X_train_scaled, y_train, model_choice)
             metrics = evaluate_model(model, X_test_scaled, y_test)
 
-            st.subheader("Model Evaluation")
+            # Display results
+            st.subheader("📊 Model Evaluation")
             col1, col2, col3, col4, col5 = st.columns(5)
             col1.metric("Accuracy", f"{metrics['accuracy']:.2f}")
             col2.metric("Precision", f"{metrics['precision']:.2f}")
@@ -50,6 +57,7 @@ with tab_train:
             col4.metric("F1 Score", f"{metrics['f1']:.2f}")
             col5.metric("ROC-AUC", f"{metrics['roc_auc']:.2f}")
 
+            # Save models
             os.makedirs("models", exist_ok=True)
             model_file = f"models/{model_name}.joblib"
             scaler_file = f"models/{model_name}_scaler.joblib"
@@ -60,38 +68,51 @@ with tab_train:
             with open(features_file, "w") as f:
                 json.dump({"features": final_features, "target": target_column}, f)
 
-            st.success(f"Model, scaler, features, and target saved in 'models/' folder")
+            st.success(f"✅ Model, scaler, and metadata saved in the 'models/' folder.")
+
+
 
 with tab_predict:
-    model_files = [f for f in os.listdir("models") if f.endswith(".joblib") and not f.endswith("_scaler.joblib")]
+    models_dir = "models"
+    if not os.path.exists(models_dir):
+        os.makedirs(models_dir)
+
+    model_files = [
+        f for f in os.listdir(models_dir)
+        if f.endswith(".joblib") and not f.endswith("_scaler.joblib")
+    ]
+
     if not model_files:
-        st.warning("No models found. Upload a dataset to train a model first.")
+        st.warning("⚠️ No trained models found. Train one first under the 'Train Model' tab.")
     else:
-        model_file = st.selectbox("Choose a model:", model_files)
+        model_file = st.selectbox("📂 Choose a model:", model_files)
         if model_file:
             scaler_file = model_file.replace(".joblib", "_scaler.joblib")
             metadata_file = model_file.replace(".joblib", "_metadata.json")
 
-            model = joblib.load(f"models/{model_file}")
-            scaler = joblib.load(f"models/{scaler_file}")
-            with open(f"models/{metadata_file}", "r") as f:
+            model = joblib.load(f"{models_dir}/{model_file}")
+            scaler = joblib.load(f"{models_dir}/{scaler_file}")
+            with open(f"{models_dir}/{metadata_file}", "r") as f:
                 metadata = json.load(f)
+
             features = metadata["features"]
             target_column = metadata["target"]
 
-            st.success(f"Loaded model '{model_file}' with target '{target_column}'")
+            st.success(f"✅ Loaded model '{model_file}' (target: **{target_column}**)")
+
 
             user_input = {}
-            st.subheader("Enter Patient Values")
+            st.subheader("🧍 Enter Patient Data")
             for feature in features:
                 if feature in ["sex", "menopause_im", "obese", "smoking_ever", "HTN", "HTN5", "DM", "DM5", "DM10"]:
-                    user_input[feature] = st.selectbox(feature, [0,1], key=feature)
+                    user_input[feature] = st.selectbox(feature, [0, 1], key=feature)
                 else:
                     user_input[feature] = st.number_input(feature, value=0.0, key=feature)
 
-            if st.button("Predict CVD"):
+     
+            if st.button("🔮 Predict CVD"):
                 pred, proba = predict(model, scaler, user_input)
                 if pred == 0:
-                    st.success(f"{target_column} = 0 → No event (Probability: {proba:.2f})")
+                    st.success(f"🩵 {target_column} = 0 → No CVD Event (Probability: {proba:.2f})")
                 else:
-                    st.error(f"{target_column} = 1 → Event likely (Probability: {proba:.2f})")
+                    st.error(f"💔 {target_column} = 1 → Event Likely (Probability: {proba:.2f})")
