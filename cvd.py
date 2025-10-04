@@ -78,7 +78,7 @@ with tab_train:
         if input_file:
             df = load_dataset(input_file)
     else:
-        sample_path = "sample_data/cvd_sample.csv"
+        sample_path = "sampledata.csv"
         if os.path.exists(sample_path):
             df = pd.read_csv(sample_path)
             st.success("Sample dataset loaded successfully.")
